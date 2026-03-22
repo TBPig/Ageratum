@@ -1,5 +1,7 @@
 package dev.anvilcraft.resource.ageratum.client;
 
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.logging.LogUtils;
@@ -12,6 +14,8 @@ import dev.anvilcraft.resource.ageratum.client.feat.markdown.MDDocument;
 import dev.anvilcraft.resource.ageratum.client.feat.markdown.MarkdownParser;
 import dev.anvilcraft.resource.ageratum.client.gui.GuideScreen;
 import dev.anvilcraft.resource.ageratum.client.registries.AgeratumRegistries;
+import dev.anvilcraft.resource.ageratum.client.rendering.text.ttf.TtfFontLoader;
+import dev.anvilcraft.resource.ageratum.client.rendering.text.ttf.TtfTextRenderer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -27,8 +31,10 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
+import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import org.slf4j.Logger;
 
+import java.util.Locale;
 import java.util.Optional;
 import javax.annotation.Nullable;
 
@@ -39,6 +45,9 @@ public class AgeratumClient {
      * 模组日志记录器。
      */
     private static final Logger LOGGER = LogUtils.getLogger();
+    private static TtfFontLoader fontLoader;
+    private static TtfFontLoader specialFontLoader;
+    private static TtfTextRenderer renderer;
 
     /**
      * 模组客户端侧构造函数，由 NeoForge 在加载时调用。
@@ -53,6 +62,12 @@ public class AgeratumClient {
         BuiltinExtensionComponents.init();
         // 触发内置行内样式解析器注册项的类加载
         BuiltinInlineStyleParsers.init();
+
+        RenderSystem.recordRenderCall(() -> {
+            fontLoader = new TtfFontLoader(Ageratum.location("font/noto_sans_sc_regular.ttf"));
+            specialFontLoader = new TtfFontLoader(Ageratum.location("font/jb_mono_nerd.ttf"));
+            renderer = new TtfTextRenderer();
+        });
     }
 
     /**
@@ -67,6 +82,110 @@ public class AgeratumClient {
             LOGGER.warn("Failed to read client language code, fallback to en_us", exception);
             return GuideDocumentLoader.DEFAULT_LANGUAGE_CODE;
         }
+    }
+
+    @SubscribeEvent
+    public static void on(RegisterGuiLayersEvent event) {
+        event.registerAboveAll(Ageratum.location("test"), ((guiGraphics, deltaTracker) -> {
+            PoseStack pose = guiGraphics.pose();
+            renderer.addText(
+                """
+                    Windows PowerShit
+                    Copyright (C) Microsoft Corporation. All rights reserved.
+                    The quick brown fox jumped over the lazy dog.
+                    正在准备Windows
+                    请不要关闭你的计算机
+                    中国传播家文化的主题餐厅
+                    家是本 家是本心灵家港，幸福味道记忆处
+                    一群人，一辈子，干好传播家是本文化这件事
+                    家是本+传播共识+城市宣传+产品+店面+服务+可复制文化商业模式
+                    （具有社会标杆示范作用 自带两大永久生命力的大流量内容）
+                    新形势、新商业，新方向
+                    新模式、新机遇，新选择，新人生
+                    就业创业招商的智选 方向大于努力，平台比能力更重要
+                    """,
+                50,
+                0,
+                150,
+                1,
+                pose,
+                -1,
+                fontLoader
+            );
+            renderer.addText(
+                """
+                    Windows PowerShell
+                    Copyright (C) Microsoft Corporation. All rights reserved.
+                    
+                    Install the latest PowerShell for new features and improvements! https://aka.ms/PSWindows
+                    
+                    Loading personal and system profiles took 1879ms.
+                    
+                    Ageratum on  releases/1.21.1 [!+?] via 🅶 v8.8 via ☕ v21.0.5
+                    ❯ The quick brown fox jumped over the lazy dog.
+                    The : The term 'The' is not recognized as the name of a cmdlet, function, script file, or operable program.
+                    Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+                    At line:1 char:1
+                    + The quick brown fox jumped over the lazy dog.
+                    + ~~~
+                        + CategoryInfo          : ObjectNotFound: (The:String) [], CommandNotFoundException
+                        + FullyQualifiedErrorId : CommandNotFoundException
+                    """,
+                50,
+                200,
+                150,
+                0.45f,
+                pose,
+                -1,
+                specialFontLoader
+            );
+            renderer.addText(
+                """
+                    argument scale 0.6 ->
+                    お別れしたのはもっと   感觉与你分别
+                    前の事だったような     已是很久之前的事
+                    悲しい光は封じ込めて   我封锁起悲伤的时光　
+                    踵すり減らしたんだ     磨平了鞋跟走到现在
+                    君といた時は見えた     与你在一起时看见了　
+                    今は見えなくなった     如今却已无法再看见
+                    透明な彗星をぼんやりと  透明的彗星朦胧地闪烁着
+                    でもそれだけ探している  但我只是追寻着它的影子
+                    """,
+                350,
+                0,
+                150,
+                0.6f,
+                pose,
+                -1,
+                fontLoader
+            );
+
+            pose.pushPose();
+            pose.translate(380, 100, 0);
+            pose.scale(0.6f, 0.6f, 1);
+            renderer.addText(
+                """
+                    posestack scale 0.6 ->
+                    お別れしたのはもっと   感觉与你分别
+                    前の事だったような     已是很久之前的事
+                    悲しい光は封じ込めて   我封锁起悲伤的时光　
+                    踵すり減らしたんだ     磨平了鞋跟走到现在
+                    君といた時は見えた     与你在一起时看见了　
+                    今は見えなくなった     如今却已无法再看见
+                    透明な彗星をぼんやりと  透明的彗星朦胧地闪烁着
+                    でもそれだけ探している  但我只是追寻着它的影子
+                    """,
+                0,
+                0,
+                150,
+                1f,
+                pose,
+                -1,
+                fontLoader
+            );
+            pose.popPose();
+            renderer.draw();
+        }));
     }
 
     /**
