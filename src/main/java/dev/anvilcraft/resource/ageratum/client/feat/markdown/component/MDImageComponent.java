@@ -1,12 +1,21 @@
 package dev.anvilcraft.resource.ageratum.client.feat.markdown.component;
 
-import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.platform.NativeImage;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.BufferUploader;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
+import lombok.Getter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.network.chat.FormattedText;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.Resource;
+import org.joml.Matrix4f;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -21,17 +30,18 @@ import javax.annotation.Nullable;
  * <p>支持独占一行的 Markdown 图片语法，图片资源会被映射到
  * {@code textures/} 目录下并按可用区域等比缩放。</p>
  */
+@Getter
 public class MDImageComponent extends MDComponent {
     private static final Pattern IMAGE_PATTERN = Pattern.compile("^\\s*!\\[[^]]*]\\(([^):]+):([^)]+)\\)\\s*$");
     private static final Map<ResourceLocation, Size> IMAGE_SIZE_CACHE = new HashMap<>();
-    private final ResourceLocation imageLocation;
+    protected final ResourceLocation imageLocation;
 
     /**
      * 创建图片组件。
      */
     public MDImageComponent(ResourceLocation imageLocation) {
         super(FormattedText.EMPTY);
-        this.imageLocation = imageLocation;
+        this.imageLocation = imageLocation.withPrefix("textures/");
     }
 
     /**
@@ -48,7 +58,7 @@ public class MDImageComponent extends MDComponent {
             file = file.substring(1);
         }
         try {
-            ResourceLocation imageLocation = ResourceLocation.fromNamespaceAndPath(namespace, "textures/" + file);
+            ResourceLocation imageLocation = ResourceLocation.fromNamespaceAndPath(namespace, file);
             return new MDImageComponent(imageLocation);
         } catch (RuntimeException exception) {
             return null;
@@ -70,8 +80,38 @@ public class MDImageComponent extends MDComponent {
         PoseStack pose = guiGraphics.pose();
         pose.pushPose();
         pose.scale(scaleX, scaleY, 1.0f);
-        guiGraphics.blit(this.imageLocation, 0, 0, 0, 0, size.width(), size.height(), size.width(), size.height());
+        this.innerBlit(guiGraphics, this.getImageLocation(), size.width(), size.height(), size.width(), size.height());
+        this.renderContent(guiGraphics, size);
         pose.popPose();
+    }
+
+    protected void renderContent(GuiGraphics guiGraphics, Size size) {
+        this.innerBlit(guiGraphics, this.getImageLocation(), size.width(), size.height(), size.width(), size.height());
+    }
+
+    protected void innerBlit(
+        GuiGraphics guiGraphics,
+        ResourceLocation atlasLocation,
+        int width,
+        int height,
+        int textureWidth,
+        int textureHeight
+    ) {
+        float minU = ((float) 0.0 + 0.0F) / (float) textureWidth;
+        float maxU = ((float) 0.0 + (float) width) / (float) textureWidth;
+        float minV = (0.0F + 0.0F) / (float) textureHeight;
+        float maxV = (0.0F + (float) height) / (float) textureHeight;
+        RenderSystem.enableBlend();
+        RenderSystem.setShaderTexture(0, atlasLocation);
+        RenderSystem.setShader(GameRenderer::getPositionTexShader);
+        Matrix4f matrix4f = guiGraphics.pose().last().pose();
+        BufferBuilder bufferbuilder = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
+        bufferbuilder.addVertex(matrix4f, (float) 0, (float) 0, (float) 0).setUv(minU, minV);
+        bufferbuilder.addVertex(matrix4f, (float) 0, (float) height, (float) 0).setUv(minU, maxV);
+        bufferbuilder.addVertex(matrix4f, (float) width, (float) height, (float) 0).setUv(maxU, maxV);
+        bufferbuilder.addVertex(matrix4f, (float) width, (float) 0, (float) 0).setUv(maxU, minV);
+        BufferUploader.drawWithShader(bufferbuilder.buildOrThrow());
+        RenderSystem.disableBlend();
     }
 
     /**
@@ -86,9 +126,9 @@ public class MDImageComponent extends MDComponent {
     /**
      * 在可用宽高约束下计算等比缩放后的尺寸。
      */
-    private Size computeRenderSize(Size source, int maxX, int maxY) {
+    protected Size computeRenderSize(Size source, int maxX, int maxY) {
         int availableWidth = Math.max(1, maxX);
-        int availableHeight = maxY <= 0 ? Integer.MAX_VALUE : Math.max(1, maxY);
+        int availableHeight = maxY <= 0 ? Integer.MAX_VALUE : availableWidth;
         float scale = Math.min((float) availableWidth / source.width(), (float) availableHeight / source.height());
         scale = Math.min(1.0f, scale);
         int width = Math.max(1, Math.round(source.width() * scale));
@@ -99,14 +139,14 @@ public class MDImageComponent extends MDComponent {
     /**
      * 获取图片原始尺寸，缺失时使用缓存或回退默认值。
      */
-    private Size resolveSize(Minecraft minecraft) {
-        Size cachedSize = IMAGE_SIZE_CACHE.get(this.imageLocation);
+    protected Size resolveSize(Minecraft minecraft) {
+        Size cachedSize = IMAGE_SIZE_CACHE.get(this.getImageLocation());
         if (cachedSize != null) {
             return cachedSize;
         }
         Size size = new Size(16, 16);
         try {
-            Resource resource = minecraft.getResourceManager().getResource(this.imageLocation).orElse(null);
+            Resource resource = minecraft.getResourceManager().getResource(this.getImageLocation()).orElse(null);
             if (resource != null) {
                 try (NativeImage image = NativeImage.read(resource.open())) {
                     size = new Size(Math.max(1, image.getWidth()), Math.max(1, image.getHeight()));
@@ -115,14 +155,14 @@ public class MDImageComponent extends MDComponent {
         } catch (IOException ignored) {
             // Missing or invalid textures fall back to a tiny placeholder size.
         }
-        IMAGE_SIZE_CACHE.put(this.imageLocation, size);
+        IMAGE_SIZE_CACHE.put(this.getImageLocation(), size);
         return size;
     }
 
     /**
      * 简单尺寸值对象。
      */
-    private record Size(int width, int height) {
+    public record Size(int width, int height) {
     }
 }
 

@@ -2,9 +2,9 @@ package dev.anvilcraft.resource.ageratum.client.gui;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.resource.ageratum.Ageratum;
+import dev.anvilcraft.resource.ageratum.client.AgeratumClient;
 import dev.anvilcraft.resource.ageratum.client.feat.markdown.GuideDocumentCache;
 import dev.anvilcraft.resource.ageratum.client.feat.markdown.GuideDocumentLoader;
-import dev.anvilcraft.resource.ageratum.client.AgeratumClient;
 import dev.anvilcraft.resource.ageratum.client.feat.markdown.MarkdownParser;
 import dev.anvilcraft.resource.ageratum.client.feat.markdown.component.MDComponent;
 import lombok.Getter;
@@ -20,6 +20,9 @@ import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.util.Mth;
 import org.lwjgl.glfw.GLFW;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -188,8 +191,7 @@ public class GuideScreen extends Screen {
     /**
      * 当前标签列表滚动的起始行索引。
      * -- GETTER --
-     *  返回当前侧栏滚动的起始行索引。
-
+     * 返回当前侧栏滚动的起始行索引。
      */
     @Getter
     protected int labelScrollRows;
@@ -200,8 +202,7 @@ public class GuideScreen extends Screen {
     /**
      * 触控板等高精度滚轮的小数累积，按系统增量折算后取整到行滚动。
      * -- GETTER --
-     *  返回当前侧栏滚动的小数累积量。
-
+     * 返回当前侧栏滚动的小数累积量。
      */
     @Getter
     protected double labelScrollRemainder;
@@ -217,6 +218,7 @@ public class GuideScreen extends Screen {
      * 待定位的锚点（从其他页面链接过来时设置）。
      */
     protected @Nullable String pendingAnchor;
+    protected List<ResourceLocation> breadCrumbs;
 
     /**
      * 标准构造函数，从外部传入文档位置和 Markdown 文本。
@@ -224,12 +226,13 @@ public class GuideScreen extends Screen {
      * @param documentLocation 文档资源位置，用于构造界面标题
      * @param markdown         要渲染的 Markdown 原始文本
      */
-    public GuideScreen(ResourceLocation documentLocation, String markdown) {
+    public GuideScreen(ResourceLocation documentLocation, String markdown, List<ResourceLocation> breadCrumbs) {
         super(Component.literal("Guide - " + documentLocation));
         this.documentLocation = documentLocation;
         this.parser = new MarkdownParser();
         // 将 Markdown 文本解析为组件列表，后续逐帧渲染
         this.parsedComponents = this.parser.parse(markdown);
+        this.breadCrumbs = breadCrumbs;
     }
 
     /**
@@ -238,11 +241,12 @@ public class GuideScreen extends Screen {
      * @param documentLocation 文档资源位置，用于构造界面标题
      * @param parsedComponents 预解析后的组件列表
      */
-    public GuideScreen(ResourceLocation documentLocation, List<MDComponent> parsedComponents) {
+    public GuideScreen(ResourceLocation documentLocation, List<MDComponent> parsedComponents, List<ResourceLocation> breadCrumbs) {
         super(Component.literal("Guide - " + documentLocation));
         this.documentLocation = documentLocation;
         this.parser = new MarkdownParser();
         this.parsedComponents = List.copyOf(parsedComponents);
+        this.breadCrumbs = breadCrumbs;
     }
 
     /**
@@ -267,6 +271,8 @@ public class GuideScreen extends Screen {
         if (this.minecraft != null) {
             this.currentLanguageCode = this.getClientLanguageCode(this.minecraft);
             this.rebuildLabelEntries(this.minecraft.getResourceManager());
+            this.updateScrollBounds();
+            this.tryScrollToPendingAnchor();
         }
         // 防止窗口缩小后滚动量超出边界
         this.contentScroll = Mth.clamp(this.contentScroll, 0.0f, this.maxContentScroll);
@@ -341,6 +347,9 @@ public class GuideScreen extends Screen {
      */
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (button == 0 && this.tryHandleSidebarButtonClick(mouseX, mouseY)) {
+            return true;
+        }
         if (button == 0 && this.mouseInLabelRange(mouseX, mouseY)) {
             if (this.tryOpenLabelAt(mouseX, mouseY)) {
                 return true;
@@ -516,8 +525,66 @@ public class GuideScreen extends Screen {
             pose.popPose();
             pose.popPose();
         }
-
+        // Close Button
+        int originX = this.getCloseButtonX();
+        int originY = this.getCloseButtonY();
+        boolean isHover = this.mouseInRange(originX, originY, this.labelWidth, this.labelHeight, mouseX, mouseY);
+        guiGraphics.blit(GUIDE_LOCATION, originX + (isHover ? 5 : 0), originY, this.imageWidth, 48, this.labelWidth, this.labelHeight);
+        // Return Button
+        if (this.hasReturnButton()) {
+            originY = this.getReturnButtonY();
+            isHover = this.mouseInRange(originX, originY, this.labelWidth, this.labelHeight, mouseX, mouseY);
+            guiGraphics.blit(GUIDE_LOCATION, originX + (isHover ? 5 : 0), originY, this.imageWidth, 64, this.labelWidth, this.labelHeight);
+        }
         this.renderLabelScrollHint(guiGraphics);
+    }
+
+    private int getCloseButtonX() {
+        return 160;
+    }
+
+    private int getCloseButtonY() {
+        return LABEL_START_Y;
+    }
+
+    private int getReturnButtonY() {
+        return LABEL_START_Y + LABEL_ROW_SPACING * 10;
+    }
+
+    private boolean hasReturnButton() {
+        return !this.breadCrumbs.isEmpty();
+    }
+
+    private boolean tryHandleSidebarButtonClick(double mouseX, double mouseY) {
+        if (this.minecraft == null) {
+            return false;
+        }
+        int relMouseX = (int) Math.floor(mouseX - this.leftPos);
+        int relMouseY = (int) Math.floor(mouseY - this.topPos);
+        int closeButtonX = this.getCloseButtonX();
+        int closeButtonY = this.getCloseButtonY();
+        if (this.mouseInRange(closeButtonX, closeButtonY, this.labelWidth, this.labelHeight, relMouseX, relMouseY)) {
+            this.onClose();
+            return true;
+        }
+        if (!this.hasReturnButton()) {
+            return false;
+        }
+        int returnButtonY = this.getReturnButtonY();
+        return this.mouseInRange(closeButtonX, returnButtonY, this.labelWidth, this.labelHeight, relMouseX, relMouseY)
+               && this.tryReturnToPreviousGuide();
+    }
+
+    private boolean tryReturnToPreviousGuide() {
+        ArrayList<ResourceLocation> remainingBreadCrumbs = new ArrayList<>(this.breadCrumbs);
+        while (!remainingBreadCrumbs.isEmpty()) {
+            ResourceLocation previousLocation = remainingBreadCrumbs.removeLast();
+            if (previousLocation.equals(this.documentLocation)) {
+                continue;
+            }
+            return AgeratumClient.openGuideOnClient(previousLocation, List.copyOf(remainingBreadCrumbs));
+        }
+        return false;
     }
 
     private void renderLabelScrollHint(GuiGraphics guiGraphics) {
@@ -676,7 +743,13 @@ public class GuideScreen extends Screen {
             int originX = LABEL_BASE_X + (entry.level == 2 ? LABEL_LEVEL2_INDENT : 0);
             int originY = LABEL_START_Y + row * LABEL_ROW_SPACING;
             if (this.mouseInRange(originX, originY, this.labelWidth, this.labelHeight, relMouseX, relMouseY)) {
-                return AgeratumClient.openGuideOnClient(entry.location);
+                List<ResourceLocation> breadCrumbs = this.breadCrumbs;
+                if (!entry.location.equals(this.documentLocation)) {
+                    breadCrumbs = new ArrayList<>(this.breadCrumbs);
+                    breadCrumbs.add(this.documentLocation);
+                    breadCrumbs = List.copyOf(breadCrumbs);
+                }
+                return AgeratumClient.openGuideOnClient(entry.location, breadCrumbs);
             }
         }
         return false;
@@ -708,9 +781,9 @@ public class GuideScreen extends Screen {
             target = target.substring(0, anchorIndex).trim();
         }
 
-        // 仅锚点（如 #section）按原有组件点击流程处理。
+        // 仅锚点（如 #section）直接在当前页面内定位。
         if (target.isEmpty()) {
-            return false;
+            return anchor != null && this.tryScrollToAnchor(anchor);
         }
         String lowerTarget = target.toLowerCase(Locale.ROOT);
         //noinspection HttpUrlsUsage
@@ -728,7 +801,13 @@ public class GuideScreen extends Screen {
         if (parsed != null && target.contains(":")) {
             // 显式 namespace: 优先视为文档 fileArgument；若是完整资源路径则直接打开。
             if (parsed.getPath().startsWith("ageratum/") && parsed.getPath().endsWith(".md")) {
-                return AgeratumClient.openGuideOnClient(parsed, anchor);
+                List<ResourceLocation> breadCrumbs = this.breadCrumbs;
+                if (!parsed.equals(this.documentLocation)) {
+                    breadCrumbs = new ArrayList<>(this.breadCrumbs);
+                    breadCrumbs.add(this.documentLocation);
+                    breadCrumbs = List.copyOf(breadCrumbs);
+                }
+                return AgeratumClient.openGuideOnClient(parsed, anchor, breadCrumbs);
             }
             resolved = GuideDocumentLoader.resolveExistingLocation(
                 resourceManager,
@@ -740,7 +819,101 @@ public class GuideScreen extends Screen {
             resolved = this.resolveLocationWithoutNamespace(resourceManager, target);
         }
 
-        return resolved.isPresent() && AgeratumClient.openGuideOnClient(resolved.get(), anchor);
+        ArrayList<ResourceLocation> breadCrumbs = new ArrayList<>(this.breadCrumbs);
+        breadCrumbs.add(this.documentLocation);
+        if (resolved.isPresent() && resolved.get().equals(this.documentLocation)) {
+            return anchor == null || this.tryScrollToAnchor(anchor);
+        }
+        return resolved.isPresent() && AgeratumClient.openGuideOnClient(
+            resolved.get(),
+            anchor,
+            resolved.get().equals(this.documentLocation) ? this.breadCrumbs : List.copyOf(breadCrumbs)
+        );
+    }
+
+    /**
+     * 若当前页面带有待处理锚点，则在初始化阶段滚动到目标标题。
+     */
+    private void tryScrollToPendingAnchor() {
+        if (this.pendingAnchor == null || this.pendingAnchor.isBlank()) {
+            return;
+        }
+        String anchor = this.pendingAnchor;
+        this.pendingAnchor = null;
+        this.tryScrollToAnchor(anchor);
+    }
+
+    /**
+     * 将内容滚动到给定锚点对应的标题位置。
+     *
+     * @return 找到锚点并完成滚动时返回 {@code true}
+     */
+    private boolean tryScrollToAnchor(String anchor) {
+        if (this.minecraft == null) {
+            return false;
+        }
+        String normalizedAnchor = this.normalizeAnchor(anchor);
+        if (normalizedAnchor.isEmpty()) {
+            return false;
+        }
+
+        float offsetY = 0.0f;
+        for (MDComponent component : this.parsedComponents) {
+            if (component instanceof dev.anvilcraft.resource.ageratum.client.feat.markdown.component.MDHeaderComponent header) {
+                String headingText = header.getText().getString();
+                if (this.matchesAnchor(normalizedAnchor, headingText)) {
+                    this.updateScrollBounds();
+                    this.contentScroll = Mth.clamp(offsetY, 0.0f, this.maxContentScroll);
+                    return true;
+                }
+            }
+            offsetY += component.getHeight(this.minecraft, CONTENT_WIDTH, Integer.MAX_VALUE) + CONTENT_SPACING;
+        }
+        return false;
+    }
+
+    private boolean matchesAnchor(String normalizedAnchor, String headingText) {
+        if (headingText.isBlank()) {
+            return false;
+        }
+        String normalizedHeading = this.normalizeAnchor(headingText);
+        if (normalizedAnchor.equals(normalizedHeading)) {
+            return true;
+        }
+        return normalizedAnchor.equals(headingText.trim().toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * 将标题或原始锚点规范化为可比较的 slug。
+     */
+    private String normalizeAnchor(String rawAnchor) {
+        String decoded = URLDecoder.decode(rawAnchor, StandardCharsets.UTF_8).trim();
+        if (decoded.isEmpty()) {
+            return "";
+        }
+        String normalized = Normalizer.normalize(decoded, Normalizer.Form.NFKC).toLowerCase(Locale.ROOT);
+        StringBuilder builder = new StringBuilder(normalized.length());
+        boolean previousWasSeparator = false;
+        for (int index = 0; index < normalized.length(); index++) {
+            char current = normalized.charAt(index);
+            if (Character.isLetterOrDigit(current)) {
+                builder.append(current);
+                previousWasSeparator = false;
+                continue;
+            }
+            if (Character.isWhitespace(current) || current == '-' || current == '_') {
+                if (!previousWasSeparator && !builder.isEmpty()) {
+                    builder.append('-');
+                    previousWasSeparator = true;
+                }
+            }
+        }
+        int length = builder.length();
+        while (length > 0 && builder.charAt(length - 1) == '-') {
+            builder.deleteCharAt(length - 1);
+            length--;
+        }
+        return builder.toString();
     }
 
     /**
