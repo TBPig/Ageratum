@@ -18,10 +18,10 @@ import com.mojang.blaze3d.vertex.VertexFormat;
 import dev.anvilcraft.resource.ageratum.client.rendering.text.GlyphDescriptor;
 import dev.anvilcraft.resource.ageratum.client.rendering.text.ITextRenderer;
 
-import java.awt.*;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import javax.annotation.Nullable;
 
 public class TtfTextRenderer implements ITextRenderer {
     private static final float DEFAULT_SCALE = 0.27f;
@@ -31,7 +31,7 @@ public class TtfTextRenderer implements ITextRenderer {
     private final Map<TtfGlyphAtlas, DrawContext> contextMap = new IdentityHashMap<>();
     private final Map<RenderStatePack, BufferBuilder> batchMap = new HashMap<>();
     private final TtfShader shader = new TtfShader();
-    private ScissorState scissorState;
+    private @Nullable ScissorState scissorState;
     private boolean isEmpty = true;
 
     public TtfTextRenderer(int bufferSize) {
@@ -57,7 +57,7 @@ public class TtfTextRenderer implements ITextRenderer {
         return drawContext;
     }
 
-    public BufferBuilder getOrBeginBatch(GlyphDescriptor descriptor, ScissorState scissorState, TtfFontLoader fontLoader) {
+    public BufferBuilder getOrBeginBatch(GlyphDescriptor descriptor, @Nullable ScissorState scissorState, TtfFontLoader fontLoader) {
         TtfGlyphAtlas atlas = descriptor.atlas();
         DrawContext context = getOrCreateContext(atlas, fontLoader);
         RenderStatePack renderStatePack = new RenderStatePack(context, scissorState);
@@ -70,8 +70,18 @@ public class TtfTextRenderer implements ITextRenderer {
     }
 
     @Override
-    public void addText(String text, float x, float y, float z, float scale, PoseStack poseStack, int argb, TtfFontLoader fontLoader) {
+    public void addText(
+        String text,
+        float x,
+        float y,
+        float z,
+        float scale,
+        PoseStack poseStack,
+        int argb,
+        @Nullable TtfFontLoader fontLoader
+    ) {
         final var finalScale = scale * DEFAULT_SCALE;
+        if (fontLoader == null) return;
         fontLoader.checkAndLoadChars(text);
 
         float xOffset = 0f;
@@ -204,7 +214,7 @@ public class TtfTextRenderer implements ITextRenderer {
 
     public record RenderStatePack(
         DrawContext drawContext,
-        ScissorState scissorState
+        @Nullable ScissorState scissorState
     ) {
 
         @Override

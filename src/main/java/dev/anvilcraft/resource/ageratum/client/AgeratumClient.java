@@ -36,7 +36,6 @@ import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import org.slf4j.Logger;
 
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import javax.annotation.Nullable;
 
@@ -47,9 +46,9 @@ public class AgeratumClient {
      * 模组日志记录器。
      */
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static TtfFontLoader fontLoader;
-    private static TtfFontLoader specialFontLoader;
-    private static TtfTextRenderer renderer;
+    private static @Nullable TtfFontLoader fontLoader;
+    private static @Nullable TtfFontLoader specialFontLoader;
+    private static @Nullable TtfTextRenderer renderer;
 
     /**
      * 模组客户端侧构造函数，由 NeoForge 在加载时调用。

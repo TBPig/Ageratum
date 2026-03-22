@@ -6,6 +6,8 @@
  */
 package dev.anvilcraft.resource.ageratum.client.rendering.text;
 
+import javax.annotation.Nullable;
+
 public interface IFontLoader {
 
     void checkAndLoadChar(char ch);
@@ -14,6 +16,7 @@ public interface IFontLoader {
 
     void destroy();
 
+    @Nullable
     GlyphDescriptor getGlyph(char ch);
 
 }

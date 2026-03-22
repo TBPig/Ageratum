@@ -7,9 +7,10 @@
 package dev.anvilcraft.resource.ageratum.client.rendering.text.ttf;
 
 import java.nio.ByteBuffer;
+import javax.annotation.Nullable;
 
 public record TtfGlyph(
-        ByteBuffer glyphData,
+        @Nullable ByteBuffer glyphData,
         int width,
         int height,
         int xOffset,

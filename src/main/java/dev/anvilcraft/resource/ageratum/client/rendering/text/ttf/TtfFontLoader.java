@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import javax.annotation.Nullable;
 
 public class TtfFontLoader implements IFontLoader {
 
@@ -85,7 +86,7 @@ public class TtfFontLoader implements IFontLoader {
     }
 
     @Override
-    public GlyphDescriptor getGlyph(char ch) {
+    public @Nullable GlyphDescriptor getGlyph(char ch) {
         return glyphMap.get(ch);
     }
 }
